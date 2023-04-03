@@ -1,0 +1,125 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation template for Satu Data - Executive Dashboard workshop.
+
+Metadata:
+  License:
+    Description: 'Copyright 2023 Amazon.com, Inc. and its affiliates. All Rights Reserved.SPDX-License-Identifier: MIT-0'
+
+Resources:
+
+################## CLOUD9 #################
+  Cloud9IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: Environment
+          Value: AWS Example
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+            - ssm.amazonaws.com
+            - s3.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Path: "/"
+
+  Cloud9InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: Cloud9IAMRole
+
+  Cloud9Instance:
+    Description: "-"
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties:
+      Description: AWS Cloud9 instance for satu data workshop
+      AutomaticStopTimeMinutes: 3600
+      InstanceType: t3.small
+      Name: Cloud9 Instance
+      Tags: 
+        - 
+          Key: SSMBootstrap
+          Value: Active
+        - 
+          Key: Environment
+          Value: AWS Example
+
+
+
+  ################## S3  #################
+
+  SatuDataS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: !Sub "satudata-workshop-2023-${AWS::AccountId}"
+
+
+  AthenaQueryS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "satudata-athena-output-${AWS::AccountId}"
+
+  ################## GLUE  #################
+
+  GlueIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: glue-job-s3-permission-role1
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "glue.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: s3-satudata-policy
+          PolicyDocument:
+             Version: 2012-10-17
+             Statement:
+                - Sid: ListBucket
+                  Effect: Allow
+                  Action:
+                    - "s3:ListAllMyBuckets"
+                  Resource: '*'
+                - Sid: SatuDataBuckets
+                  Effect: Allow
+                  Action: "s3:*"
+                  Resource:
+                    - !Sub "arn:aws:s3:::satudata-workshop-2023-${AWS::AccountId}"
+                    - !Sub "arn:aws:s3:::satudata-workshop-2023-${AWS::AccountId}/*"
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Path: "/"
+
+  GlueRawDatabase:
+    Type: AWS::Glue::Database
+    Properties: 
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput: 
+        Name: satudata-raw-db
+
+  GlueRawCrawler:
+    Type: AWS::Glue::Crawler
+    Properties: 
+      DatabaseName: !Ref GlueRawDatabase
+      Name: satudata-raw-crawler
+      Role: !Ref GlueIAMRole
+      TablePrefix: raw-
+      Targets: 
+        S3Targets:
+          - Path: !Sub "${SatuDataS3Bucket}/raw/"
+
+
